@@ -45,6 +45,12 @@ variable "state_bucket_arn" {
   default     = null
 }
 
+variable "state_lock_table_arn" {
+  description = "ARN of the DynamoDB state lock table. Without this a role can read and write state but cannot take the lock, so every plan and apply fails at the very first step."
+  type        = string
+  default     = null
+}
+
 variable "state_kms_key_arn" {
   description = "KMS key ARN encrypting state objects."
   type        = string

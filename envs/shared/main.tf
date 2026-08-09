@@ -51,6 +51,7 @@ module "github_oidc" {
   create_oidc_provider = var.create_oidc_provider
   github_subjects      = var.github_subjects
   state_bucket_arn     = var.state_bucket_arn
+  state_lock_table_arn = var.state_lock_table_arn
   state_kms_key_arn    = var.state_kms_key_arn
 
   # Terraform manages ECS task roles, so the apply role needs IAM write access

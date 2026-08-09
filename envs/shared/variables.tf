@@ -70,6 +70,12 @@ variable "state_bucket_arn" {
   default     = null
 }
 
+variable "state_lock_table_arn" {
+  description = "ARN of the DynamoDB table used for state locking, granted to the CI roles."
+  type        = string
+  default     = null
+}
+
 variable "state_kms_key_arn" {
   description = "ARN of the KMS key encrypting Terraform state."
   type        = string
