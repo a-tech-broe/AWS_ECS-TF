@@ -15,10 +15,11 @@ on:
         type: choice
         options: [shared, dev, staging, prod]
 
+# Read-only by default; each job below widens this to exactly what it needs.
+# Declaring id-token/pull-requests at workflow level would hand an OIDC token to
+# the lint and security jobs, which have no use for one.
 permissions:
   contents: read
-  id-token: write # required for OIDC role assumption
-  pull-requests: write
 
 env:
   TF_VERSION: "1.14.3"
@@ -109,6 +110,9 @@ jobs:
   security:
     name: security
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      security-events: write # required to upload SARIF to code scanning
     steps:
       - uses: actions/checkout@v4
 
@@ -120,9 +124,15 @@ jobs:
           output_file_path: console,checkov.sarif
           soft_fail: false
 
+      # Forked pull requests get a read-only token no matter what this workflow
+      # declares, so the upload cannot succeed there. Skip it rather than fail:
+      # the Checkov step above is the actual gate and still fails the build.
       - name: Upload Checkov SARIF
-        uses: github/codeql-action/upload-sarif@v3
-        if: always()
+        uses: github/codeql-action/upload-sarif@v4
+        if: >-
+          always() &&
+          (github.event_name != 'pull_request' ||
+           github.event.pull_request.head.repo.full_name == github.repository)
         with:
           sarif_file: checkov.sarif
           category: checkov
@@ -139,6 +149,10 @@ jobs:
   plan:
     name: plan (${{ matrix.environment }})
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write # OIDC role assumption
+      pull-requests: write # posting the plan comment
     needs: [preflight, lint, security]
     if: github.event_name == 'pull_request' && needs.preflight.outputs.aws_configured == 'true'
     strategy:
@@ -205,6 +219,9 @@ jobs:
   apply:
     name: apply (${{ inputs.environment || matrix.environment }})
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write # OIDC role assumption
     needs: [preflight, lint, security]
     if: (github.event_name == 'push' || github.event_name == 'workflow_dispatch') && needs.preflight.outputs.aws_configured == 'true'
     strategy:
