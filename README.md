@@ -87,6 +87,17 @@ make plan ENV=shared && make apply ENV=shared
 Record the two role ARNs as repository **variables** (not secrets):
 `AWS_PLAN_ROLE_ARN` and `AWS_APPLY_ROLE_ARN`.
 
+> **CI before this point.** The pipeline's `plan` and `apply` jobs need those
+> roles, which only exist once `envs/shared` is applied. Until both variables
+> are set, a `preflight` job detects it and skips them, printing this checklist
+> in the run summary instead of failing inside the credentials action.
+> `fmt`, `validate`, `tflint`, Checkov and Trivy still run on every pull
+> request, so nothing goes unchecked while you bootstrap.
+
+This ordering is inherent, not incidental: the pipeline's own identity is one of
+the things the pipeline manages, so the first apply of `envs/shared` has to
+happen from a workstation.
+
 ### 3. Deploy an environment
 
 Set `domain_name` + `route53_zone_id` (a certificate is issued and DNS-validated
