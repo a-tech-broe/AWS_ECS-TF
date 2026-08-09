@@ -6,8 +6,6 @@
 # No long-lived access keys exist anywhere in this design.
 ###############################################################################
 
-data "aws_partition" "current" {}
-
 locals {
   provider_url = "https://token.actions.githubusercontent.com"
   provider_arn = var.create_oidc_provider ? aws_iam_openid_connect_provider.github[0].arn : data.aws_iam_openid_connect_provider.github[0].arn

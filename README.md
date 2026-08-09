@@ -256,9 +256,19 @@ turns one AZ's failure into an egress outage for the whole environment.
 
 ## Verification status
 
-`terraform fmt`, `terraform validate` (all 14 roots and modules), Checkov and
-Trivy all pass. The dev root was additionally verified with a real
-`terraform plan` against AWS carrying two services — a load-balanced API with a
-sidecar and a queue worker — which planned **109–112 resources with no errors**.
-No `terraform apply` has been run: no AWS infrastructure has been created by
-this repository yet.
+| Gate | Result |
+| --- | --- |
+| `terraform fmt -recursive -check` | clean |
+| `terraform validate` | 14/14 roots and modules valid, 0 warnings |
+| `tflint --recursive` (0.64.0, aws ruleset 0.48.0) | 0 issues |
+| Checkov | 374 passed, 0 failed, 45 documented suppressions |
+| Trivy | 0 misconfigurations |
+
+Two roots were additionally verified with a real `terraform plan` against AWS:
+
+- `envs/dev` carrying two services — a load-balanced API with a sidecar and a
+  queue worker — planned **109–112 resources, no errors**.
+- `envs/shared` planned **15 resources, no errors**.
+
+No `terraform apply` has been run. This repository has not created any AWS
+infrastructure yet.
