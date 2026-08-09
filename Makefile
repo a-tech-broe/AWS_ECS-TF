@@ -49,9 +49,28 @@ plan: ## terraform plan for $(ENV)
 apply: ## Apply the saved plan for $(ENV)
 	terraform -chdir=$(ENV_DIR) apply -input=false tfplan
 
+.PHONY: cost
+cost: ## Report billable resources this platform owns, with a monthly estimate
+	@./scripts/cost-inventory.sh
+
+.PHONY: teardown
+teardown: ## Tear down $(ENV), clearing whatever blocks destroy first
+	@./scripts/teardown.sh $(ENV)
+
+.PHONY: teardown-plan
+teardown-plan: ## Show what teardown would remove from $(ENV), changing nothing
+	@./scripts/teardown.sh $(ENV) --dry-run
+
+.PHONY: teardown-all
+teardown-all: ## Tear down every environment in dependency order
+	@./scripts/teardown.sh --all
+
 .PHONY: destroy
-destroy: ## Destroy $(ENV) (blocked for prod)
-	@if [ "$(ENV)" = "prod" ]; then echo "Refusing to destroy prod via make."; exit 1; fi
+destroy: ## Raw terraform destroy for $(ENV). Prefer `teardown`, which unblocks first.
+	@if [ "$(ENV)" = "prod" ]; then echo "Refusing to destroy prod via make; use scripts/teardown.sh prod."; exit 1; fi
+	@echo "Note: this fails on deletion protection, non-empty log buckets and ECR images."
+	@echo "      \`make teardown ENV=$(ENV)\` handles those. Continuing in 3s..."
+	@sleep 3
 	terraform -chdir=$(ENV_DIR) destroy -input=false
 
 .PHONY: check

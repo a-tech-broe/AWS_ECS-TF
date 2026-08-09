@@ -159,9 +159,16 @@ resource "aws_s3_bucket_lifecycle_configuration" "logs" {
 
     filter {}
 
-    transition {
-      days          = 30
-      storage_class = "STANDARD_IA"
+    # S3 rejects a lifecycle rule whose expiry is not strictly after its
+    # transition, so a short retention (dev keeps 30 days) must skip the
+    # transition rather than collide with it.
+    dynamic "transition" {
+      for_each = var.access_logs_retention_days > var.access_logs_transition_days ? [1] : []
+
+      content {
+        days          = var.access_logs_transition_days
+        storage_class = "STANDARD_IA"
+      }
     }
 
     expiration {

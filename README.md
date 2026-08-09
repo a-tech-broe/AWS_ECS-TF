@@ -343,21 +343,151 @@ turns one AZ's failure into an egress outage for the whole environment.
 
 ---
 
-## Verification status
+## Cleaning up
+
+Everything this platform runs costs money whether or not a container is serving
+traffic. `make cost` reports what is billable, read from Terraform state:
+
+```
+ENV         NAT  ENDP   ALB   EIP   WAF   KMS  ZONE    EST $/MO
+shared        0     0     0     0     0     1     1        1.50
+dev           1    16     1     1     1     1     2      182.73
+staging       3    24     1     3     1     1     2      314.13
+prod          0     0     0     0     1     1     1       12.50
+ESTIMATED FIXED MONTHLY TOTAL                          $510.86
+```
+
+Counts come from state, never from sweeping the account by resource type. That
+distinction is load-bearing: this account also hosts `talatwo` and
+`banking-platform`, whose NAT gateways and load balancers are indistinguishable
+from ours in a CLI query. Of the 3 ALBs and 11 Elastic IPs currently in the
+region, only 2 and 4 belong to this platform.
+
+### Tearing down
+
+```bash
+make teardown-plan ENV=dev     # what would go, changes nothing
+make teardown      ENV=dev     # tear down one environment
+make teardown-all              # everything, in dependency order
+```
+
+Teardown destroys exclusively through `terraform destroy`, so it can only ever
+touch resources in our own state. Before destroying it clears the three things
+that deliberately block one — each aimed at a specific resource read from our
+own outputs, never a wildcard:
+
+| Blocker | Why it exists | How teardown clears it |
+| --- | --- | --- |
+| ALB deletion protection | Stops an accidental `destroy` deleting the front door | Disabled on that one load balancer ARN |
+| Non-empty access-log bucket | `force_destroy` is off so logs are not silently lost | Every object **version and delete marker** removed; a versioned bucket is not empty until both are gone, and `aws s3 rm --recursive` clears neither |
+| Images in ECR | `force_delete` is off so a repo cannot be dropped with images in it | Images deleted from the repositories named in `shared`'s output |
+
+Order is **prod → staging → dev → shared**, and the script re-sorts whatever you
+pass into that order. `shared` must go last: the workload roots look up the
+hosted zone it owns, so destroying it first leaves the others unable to plan.
+
+Confirmation requires typing `destroy`; `--yes` skips it for automation.
+
+### Tearing down from GitHub (manual trigger)
+
+**Actions → teardown → Run workflow.** The workflow has *only* a
+`workflow_dispatch` trigger — no push, pull_request or schedule — so nothing
+that happens in the repository can destroy infrastructure on its own.
+
+| Input | Purpose |
+| --- | --- |
+| `environment` | `dev`, `staging`, `prod`, `shared`, or `all` |
+| `confirm` | Must be typed as `destroy-<environment>`, e.g. `destroy-prod` |
+| `dry_run` | **Defaults to true.** Plans only; changes nothing |
+
+Three gates, in order:
+
+1. **`verify`** rejects the run unless `confirm` exactly matches the selected
+   environment. Selecting `prod` and typing `destroy-dev` fails — you cannot
+   confirm the wrong environment by muscle memory. The inputs are passed through
+   the step environment rather than interpolated into the script, so a
+   `confirm` value containing shell metacharacters is compared, never executed.
+2. **`plan`** always runs and always publishes the cost inventory plus a full
+   destroy plan to the run summary. You see what would go before anything goes.
+3. **`destroy`** runs only when `dry_run` is false, and sits behind the
+   `teardown` GitHub Environment.
+
+> **The approval gate needs one manual step.** Create an Environment named
+> `teardown` in repository settings and add required reviewers to it. Until you
+> do, the environment gate is nominal and the destroy job proceeds as soon as
+> the plan finishes — the typed confirmation is then the only thing standing
+> between a dispatch and a deleted production environment.
+
+The workflow calls the same `scripts/teardown.sh` as the local path, so there is
+one implementation and one place for the ordering and unblock logic to be wrong.
+
+### What teardown deliberately leaves behind
+
+- **KMS keys** enter a 30-day pending-deletion window rather than vanishing.
+  They keep billing (~$1/month each) until deletion completes.
+- **The registered domain** `skybroe.com` is never deleted — only its hosted
+  zone. Its NS records then point at a zone that no longer exists, so it stops
+  resolving, which is exactly the state it was in before this platform was
+  first applied.
+- **Terraform state objects** under `ecs-platform/` in `s3://bokiti123` stay put.
+  They are a few KB and record what existed.
+- **Nothing belonging to another stack**, ever. That is the whole reason
+  teardown is state-driven rather than a CLI sweep.
+
+---
+
+## Deployment status
+
+Deployed to account `694992586025` / `us-east-1` on 2026-08-09.
+
+| Root | State | Detail |
+| --- | --- | --- |
+| `shared` | **deployed** | 19 resources. Zone `Z00990161YDCIUY3TO24J`, NS delegation, DNS query logging, ECR (`api`, `web`), both CI roles. |
+| `dev` | **deployed** | 69 resources. 2 AZ, shared NAT, ALB, WAF, ECS cluster. |
+| `staging` | **deployed** | 79 resources. 3 AZ, per-AZ NAT, ALB, WAF, ECS cluster. |
+| `prod` | **partial** | Blocked by a regional VPC quota, see below. Certificate, log bucket and WAF exist; VPC and everything downstream do not. |
+
+`terraform plan -detailed-exitcode` returns 0 for shared, dev and staging — all
+three are converged with no drift. All four state files live under the
+`ecs-platform/` prefix in `s3://bokiti123`.
+
+Live: ECS clusters `ecs-platform-dev` and `ecs-platform-staging`; ALBs for both;
+WAF web ACLs for all three environments; ACM certificates `dev.skybroe.com`,
+`staging.skybroe.com` and `skybroe.com` all `ISSUED`.
+
+No ECS services are running — every environment has `services = {}`, so the
+platform is standing but idle. That is the intended starting state.
+
+### prod is blocked on a VPC quota
+
+`us-east-1` allows 5 VPCs per region and is at 5: the AWS default VPC,
+`talatwo-vpc` and `banking-platform-prod` (both belonging to other projects), plus
+`ecs-platform-dev` and `ecs-platform-staging`. prod's apply failed with
+`VpcLimitExceeded`.
+
+A Service Quotas increase to 10 was requested on 2026-08-09 (request
+`d2d36a79cb2246f7a6874f7802e23659CzioQRyc`). Once approved:
+
+```bash
+make plan ENV=prod && make apply ENV=prod
+```
+
+prod's partial state needs no cleanup — the certificate for `skybroe.com` is
+already issued and will be reused.
+
+### A CIDR collision to be aware of
+
+`talatwo-vpc` uses `10.20.0.0/16`, the same range as `ecs-platform-staging`. They
+do not conflict today because nothing connects them, but staging can never be
+peered with that VPC. Change `vpc_cidr` in `envs/staging/terraform.tfvars` before
+any peering or Transit Gateway work.
+
+### Static analysis
 
 | Gate | Result |
 | --- | --- |
 | `terraform fmt -recursive -check` | clean |
-| `terraform validate` | 14/14 roots and modules valid, 0 warnings |
+| `terraform validate` | 14/14 roots and modules valid |
 | `tflint --recursive` (0.64.0, aws ruleset 0.48.0) | 0 issues |
-| Checkov | 374 passed, 0 failed, 45 documented suppressions |
+| Checkov | 380 passed, 0 failed, 57 documented suppressions |
 | Trivy | 0 misconfigurations |
-
-Two roots were additionally verified with a real `terraform plan` against AWS:
-
-- `envs/dev` carrying two services — a load-balanced API with a sidecar and a
-  queue worker — planned **109–112 resources, no errors**.
-- `envs/shared` planned **15 resources, no errors**.
-
-No `terraform apply` has been run. This repository has not created any AWS
-infrastructure yet.

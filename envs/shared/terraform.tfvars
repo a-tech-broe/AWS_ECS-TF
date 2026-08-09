@@ -13,9 +13,8 @@ enable_enhanced_scanning = true
 manage_registry_scanning = true
 
 # --- DNS ----------------------------------------------------------------------
-# One public hosted zone for the whole platform. After applying, take the
-# route53_name_servers output and set exactly those NS records at the domain's
-# registrar. Until that delegation exists, ACM validation cannot complete.
+# One public hosted zone for the whole platform. Delegation is handled below,
+# so no manual registrar step is needed.
 create_route53_zone = true
 route53_zone_name   = "skybroe.com"
 
@@ -25,20 +24,25 @@ route53_zone_name   = "skybroe.com"
 manage_domain_delegation = true
 
 # --- CI/CD --------------------------------------------------------------------
-# Replace <owner> with the GitHub org or user that owns this repository.
-# Subjects must name the repository explicitly; a wildcard here would let any
+# Subjects name the repository explicitly; a wildcard here would let any
 # repository on GitHub assume the apply role.
 
 create_github_oidc = true
 
+# The account already has an OIDC provider for token.actions.githubusercontent.com
+# (verified 2026-08-09). It is a per-account singleton, so this root adopts the
+# existing one by data lookup instead of creating a duplicate, which would fail
+# the apply with EntityAlreadyExists.
+create_oidc_provider = false
+
 github_subjects = [
-  "repo:<owner>/AWS_ECS-TF:ref:refs/heads/main",
-  "repo:<owner>/AWS_ECS-TF:environment:shared",
-  "repo:<owner>/AWS_ECS-TF:environment:dev",
-  "repo:<owner>/AWS_ECS-TF:environment:staging",
-  "repo:<owner>/AWS_ECS-TF:environment:prod",
+  "repo:a-tech-broe/AWS_ECS-TF:ref:refs/heads/main",
+  "repo:a-tech-broe/AWS_ECS-TF:environment:shared",
+  "repo:a-tech-broe/AWS_ECS-TF:environment:dev",
+  "repo:a-tech-broe/AWS_ECS-TF:environment:staging",
+  "repo:a-tech-broe/AWS_ECS-TF:environment:prod",
 ]
 
-# Populate from the `bootstrap` outputs so CI can read and write state.
-# state_bucket_arn  = "arn:aws:s3:::ecs-platform-tfstate-<account-id>"
-# state_kms_key_arn = "arn:aws:kms:us-east-1:<account-id>:key/<key-id>"
+# State lives in the pre-existing bokiti123 bucket. No state_kms_key_arn: that
+# bucket uses SSE-S3 (AES256), not a customer-managed key.
+state_bucket_arn = "arn:aws:s3:::bokiti123"
