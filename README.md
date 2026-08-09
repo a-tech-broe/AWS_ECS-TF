@@ -343,6 +343,66 @@ turns one AZ's failure into an egress outage for the whole environment.
 
 ---
 
+## Cleaning up
+
+Everything this platform runs costs money whether or not a container is serving
+traffic. `make cost` reports what is billable, read from Terraform state:
+
+```
+ENV         NAT  ENDP   ALB   EIP   WAF   KMS  ZONE    EST $/MO
+shared        0     0     0     0     0     1     1        1.50
+dev           1    16     1     1     1     1     2      182.73
+staging       3    24     1     3     1     1     2      314.13
+prod          0     0     0     0     1     1     1       12.50
+ESTIMATED FIXED MONTHLY TOTAL                          $510.86
+```
+
+Counts come from state, never from sweeping the account by resource type. That
+distinction is load-bearing: this account also hosts `talatwo` and
+`banking-platform`, whose NAT gateways and load balancers are indistinguishable
+from ours in a CLI query. Of the 3 ALBs and 11 Elastic IPs currently in the
+region, only 2 and 4 belong to this platform.
+
+### Tearing down
+
+```bash
+make teardown-plan ENV=dev     # what would go, changes nothing
+make teardown      ENV=dev     # tear down one environment
+make teardown-all              # everything, in dependency order
+```
+
+Teardown destroys exclusively through `terraform destroy`, so it can only ever
+touch resources in our own state. Before destroying it clears the three things
+that deliberately block one — each aimed at a specific resource read from our
+own outputs, never a wildcard:
+
+| Blocker | Why it exists | How teardown clears it |
+| --- | --- | --- |
+| ALB deletion protection | Stops an accidental `destroy` deleting the front door | Disabled on that one load balancer ARN |
+| Non-empty access-log bucket | `force_destroy` is off so logs are not silently lost | Every object **version and delete marker** removed; a versioned bucket is not empty until both are gone, and `aws s3 rm --recursive` clears neither |
+| Images in ECR | `force_delete` is off so a repo cannot be dropped with images in it | Images deleted from the repositories named in `shared`'s output |
+
+Order is **prod → staging → dev → shared**, and the script re-sorts whatever you
+pass into that order. `shared` must go last: the workload roots look up the
+hosted zone it owns, so destroying it first leaves the others unable to plan.
+
+Confirmation requires typing `destroy`; `--yes` skips it for automation.
+
+### What teardown deliberately leaves behind
+
+- **KMS keys** enter a 30-day pending-deletion window rather than vanishing.
+  They keep billing (~$1/month each) until deletion completes.
+- **The registered domain** `skybroe.com` is never deleted — only its hosted
+  zone. Its NS records then point at a zone that no longer exists, so it stops
+  resolving, which is exactly the state it was in before this platform was
+  first applied.
+- **Terraform state objects** under `ecs-platform/` in `s3://bokiti123` stay put.
+  They are a few KB and record what existed.
+- **Nothing belonging to another stack**, ever. That is the whole reason
+  teardown is state-driven rather than a CLI sweep.
+
+---
+
 ## Deployment status
 
 Deployed to account `694992586025` / `us-east-1` on 2026-08-09.
