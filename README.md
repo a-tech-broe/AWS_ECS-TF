@@ -41,7 +41,7 @@ stays correct if the network changes.
 
 | Path | Purpose |
 | --- | --- |
-| `bootstrap/` | S3 state backend + KMS. Applied once per account with local state. |
+| `bootstrap/` | S3 state bucket, KMS key and DynamoDB lock table. Greenfield only — this account already has both. |
 | `modules/kms/` | Customer-managed keys with least-privilege policies. |
 | `modules/vpc/` | Multi-AZ VPC, NAT, flow logs, interface/gateway endpoints. |
 | `modules/ecs-cluster/` | Fargate cluster, capacity providers, audited ECS Exec, Service Connect namespace. |
@@ -63,18 +63,44 @@ accident of copy-paste.
 
 ## Getting started
 
-### 1. Create the state backend (once per account)
+### 1. State backend
 
-```bash
-cd bootstrap
-terraform init
-terraform apply
-terraform output backend_hcl
+State lives in **`s3://bokiti123`**, locked by the **`family_dyning`** DynamoDB
+table. Both already exist in this account, so **`bootstrap/` is not needed here** —
+skip straight to step 2. The `envs/*/backend.hcl` files are already filled in.
+
+```hcl
+bucket         = "bokiti123"
+key            = "ecs-platform/<env>/terraform.tfstate"
+region         = "us-east-1"
+encrypt        = true
+dynamodb_table = "family_dyning"
 ```
 
-Copy the output into `envs/<env>/backend.hcl` for each environment, adjusting the
-`key` line. State uses S3-native locking (`use_lockfile`), so there is no
-DynamoDB table to manage.
+> **Why keys are namespaced.** `bokiti123` is shared with other projects, and it
+> already contains `dev/terraform.tfstate` and `prod/terraform.tfstate` belonging
+> to them. Pointing this platform at those bare keys would make Terraform adopt
+> another project's state and plan to destroy it. Every key here sits under
+> `ecs-platform/`, matching the convention already used in that bucket
+> (`ai-log-investigator/`, `aws-infrastructure/`). **Never use a bare `<env>/`
+> key in this bucket.**
+>
+> Note also that `bokiti123` uses SSE-S3 (AES256), not SSE-KMS, so `backend.hcl`
+> deliberately sets no `kms_key_id`.
+
+For a **greenfield account** that has neither resource, `bootstrap/` creates both
+(bucket, KMS key, and lock table — 10 resources):
+
+```bash
+cd bootstrap && terraform init && terraform apply
+terraform output backend_hcl     # paste into each envs/*/backend.hcl
+```
+
+It also runs safely against an account that already has them:
+
+```bash
+terraform apply -var create_state_bucket=false -var create_lock_table=false
+```
 
 ### 2. Deploy shared resources
 

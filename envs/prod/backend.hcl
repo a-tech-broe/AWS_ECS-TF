@@ -1,8 +1,13 @@
-# Fill in bucket and kms_key_id from the `bootstrap` outputs, then run:
+# Shared state backend for this account.
+#
+# NOTE: bucket "bokiti123" also holds state for unrelated projects, and the
+# bare keys "dev/terraform.tfstate" and "prod/terraform.tfstate" are already
+# taken by them. Every key here is namespaced under "ecs-platform/" so this
+# platform can never adopt or overwrite another project's state.
+#
 #   terraform init -backend-config=backend.hcl
-bucket       = "REPLACE-ME-ecs-platform-tfstate-<account-id>"
-key          = "prod/terraform.tfstate"
-region       = "us-east-1"
-encrypt      = true
-kms_key_id   = "REPLACE-ME-state-kms-key-arn"
-use_lockfile = true
+bucket         = "bokiti123"
+key            = "ecs-platform/prod/terraform.tfstate"
+region         = "us-east-1"
+encrypt        = true
+dynamodb_table = "family_dyning"
