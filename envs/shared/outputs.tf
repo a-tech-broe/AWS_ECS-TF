@@ -24,6 +24,11 @@ output "route53_zone_id" {
 }
 
 output "route53_name_servers" {
-  description = "Name servers for the zone. Certificate validation cannot succeed until the domain's registrar delegates to exactly these."
+  description = "Name servers for the zone. With manage_domain_delegation the registered domain is pointed at these automatically; otherwise set them at the registrar by hand."
   value       = var.create_route53_zone ? aws_route53_zone.this[0].name_servers : null
+}
+
+output "domain_delegation_managed" {
+  description = "Whether Terraform owns this domain's name-server delegation."
+  value       = var.create_route53_zone && var.manage_domain_delegation
 }

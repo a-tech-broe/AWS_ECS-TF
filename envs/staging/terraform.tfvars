@@ -19,12 +19,12 @@ flow_log_retention_days = 30
 # the zone ID never has to be copied between environments. A certificate for
 # these names is issued and DNS-validated automatically.
 #
-# This cannot succeed until claudiq.com's registrar delegates NS records to that
+# This cannot succeed until skybroe.com's registrar delegates NS records to that
 # zone; without delegation the apply waits out certificate_validation_timeout
 # and fails.
-route53_zone_name         = "claudiq.com"
-domain_name               = "staging.claudiq.com"
-subject_alternative_names = ["*.staging.claudiq.com"]
+route53_zone_name         = "skybroe.com"
+domain_name               = "staging.skybroe.com"
+subject_alternative_names = ["*.staging.skybroe.com"]
 
 # --- Edge ---------------------------------------------------------------------
 alb_deletion_protection    = true

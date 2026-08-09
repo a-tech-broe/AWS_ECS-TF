@@ -98,7 +98,7 @@ variable "route53_zone_id" {
 }
 
 variable "route53_zone_name" {
-  description = "Hosted zone to look up by name, e.g. 'claudiq.com'. One zone serves every environment; each environment issues a certificate for its own subdomain within it. Ignored when route53_zone_id is set."
+  description = "Hosted zone to look up by name, e.g. 'skybroe.com'. One zone serves every environment; each environment issues a certificate for its own subdomain within it. Ignored when route53_zone_id is set."
   type        = string
   default     = null
 }

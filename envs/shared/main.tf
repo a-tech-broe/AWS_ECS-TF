@@ -80,10 +80,32 @@ resource "aws_route53_zone" "this" {
   tags = local.tags
 }
 
+# skybroe.com is registered in this account, so the delegation loop can be closed
+# here instead of by hand at a registrar: Route 53 assigns the zone four name
+# servers, and this points the registered domain at exactly those. Destroying it
+# removes the record from state only — it never deletes the domain.
+resource "aws_route53domains_registered_domain" "this" {
+  provider = aws.us_east_1
+
+  count = var.create_route53_zone && var.manage_domain_delegation ? 1 : 0
+
+  domain_name = var.route53_zone_name
+
+  dynamic "name_server" {
+    for_each = aws_route53_zone.this[0].name_servers
+
+    content {
+      name = name_server.value
+    }
+  }
+}
+
 # Query logging must live in us-east-1 and write to a log group whose name
 # begins with /aws/route53/. Route 53 writes through a CloudWatch Logs resource
 # policy rather than an IAM role.
 resource "aws_cloudwatch_log_group" "dns_queries" {
+  provider = aws.us_east_1
+
   #checkov:skip=CKV_AWS_158:Route 53 query logging does not support CMK-encrypted log groups
   #checkov:skip=CKV_AWS_338:Retention is set per account via dns_query_log_retention_days
   count = local.dns_query_logging ? 1 : 0
@@ -113,6 +135,8 @@ data "aws_iam_policy_document" "route53_query_logging" {
 }
 
 resource "aws_cloudwatch_log_resource_policy" "route53_query_logging" {
+  provider = aws.us_east_1
+
   count = local.dns_query_logging ? 1 : 0
 
   policy_name     = "${local.name}-route53-query-logging"
