@@ -74,8 +74,19 @@ parse_args() {
   TARGETS=("${ordered[@]}")
 }
 
+# A fresh checkout (CI, or a new clone) has no .terraform directory, so every
+# state read would silently return nothing and teardown would report "nothing to
+# destroy" while the infrastructure kept billing. Initialise before trusting it.
+ensure_init() {
+  local env="$1"
+  local dir="${REPO_ROOT}/envs/${env}"
+  [[ -d "${dir}/.terraform" ]] && return 0
+  terraform -chdir="$dir" init -backend-config=backend.hcl -input=false -no-color >/dev/null
+}
+
 has_state() {
   local env="$1"
+  ensure_init "$env" || return 1
   [[ -n "$(terraform -chdir="${REPO_ROOT}/envs/${env}" state list 2>/dev/null | head -1)" ]]
 }
 

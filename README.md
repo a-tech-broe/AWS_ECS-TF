@@ -388,6 +388,39 @@ hosted zone it owns, so destroying it first leaves the others unable to plan.
 
 Confirmation requires typing `destroy`; `--yes` skips it for automation.
 
+### Tearing down from GitHub (manual trigger)
+
+**Actions → teardown → Run workflow.** The workflow has *only* a
+`workflow_dispatch` trigger — no push, pull_request or schedule — so nothing
+that happens in the repository can destroy infrastructure on its own.
+
+| Input | Purpose |
+| --- | --- |
+| `environment` | `dev`, `staging`, `prod`, `shared`, or `all` |
+| `confirm` | Must be typed as `destroy-<environment>`, e.g. `destroy-prod` |
+| `dry_run` | **Defaults to true.** Plans only; changes nothing |
+
+Three gates, in order:
+
+1. **`verify`** rejects the run unless `confirm` exactly matches the selected
+   environment. Selecting `prod` and typing `destroy-dev` fails — you cannot
+   confirm the wrong environment by muscle memory. The inputs are passed through
+   the step environment rather than interpolated into the script, so a
+   `confirm` value containing shell metacharacters is compared, never executed.
+2. **`plan`** always runs and always publishes the cost inventory plus a full
+   destroy plan to the run summary. You see what would go before anything goes.
+3. **`destroy`** runs only when `dry_run` is false, and sits behind the
+   `teardown` GitHub Environment.
+
+> **The approval gate needs one manual step.** Create an Environment named
+> `teardown` in repository settings and add required reviewers to it. Until you
+> do, the environment gate is nominal and the destroy job proceeds as soon as
+> the plan finishes — the typed confirmation is then the only thing standing
+> between a dispatch and a deleted production environment.
+
+The workflow calls the same `scripts/teardown.sh` as the local path, so there is
+one implementation and one place for the ordering and unblock logic to be wrong.
+
 ### What teardown deliberately leaves behind
 
 - **KMS keys** enter a 30-day pending-deletion window rather than vanishing.

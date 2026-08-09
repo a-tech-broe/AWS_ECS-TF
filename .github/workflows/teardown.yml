@@ -1,0 +1,147 @@
+name: teardown
+
+# Manual trigger only. There is deliberately no push, pull_request or schedule
+# trigger on this workflow: nothing that happens in the repository should ever
+# be able to destroy infrastructure on its own.
+on:
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: Environment to tear down
+        required: true
+        type: choice
+        options: [dev, staging, prod, shared, all]
+      confirm:
+        description: 'Type destroy-<environment> exactly, e.g. destroy-dev'
+        required: true
+        type: string
+      dry_run:
+        description: Plan only, change nothing
+        required: true
+        type: boolean
+        default: true
+
+permissions:
+  contents: read
+
+env:
+  TF_VERSION: "1.14.3"
+  AWS_REGION: us-east-1
+  TF_IN_AUTOMATION: "true"
+
+# Never let two teardowns, or a teardown and a retry, run against the same state
+# at once. DynamoDB locking would catch it, but failing here is cleaner.
+concurrency:
+  group: teardown-${{ inputs.environment }}
+  cancel-in-progress: false
+
+jobs:
+  # --- Gate: does the typed confirmation match the selected environment? -------
+  verify:
+    name: verify request
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check the confirmation phrase
+        env:
+          # Inputs are attacker-controlled text. Passing them through the
+          # environment rather than interpolating into the script body is what
+          # stops `${{ inputs.confirm }}` from becoming shell injection.
+          SELECTED: ${{ inputs.environment }}
+          TYPED: ${{ inputs.confirm }}
+        run: |
+          expected="destroy-${SELECTED}"
+          if [[ "$TYPED" != "$expected" ]]; then
+            echo "::error title=Confirmation does not match::Expected '${expected}'."
+            echo "Refusing to continue. Nothing has been changed."
+            exit 1
+          fi
+          echo "Confirmed teardown request for '${SELECTED}'."
+
+      - name: Check the CI role is configured
+        env:
+          APPLY_ROLE: ${{ vars.AWS_APPLY_ROLE_ARN }}
+        run: |
+          if [[ -z "$APPLY_ROLE" ]]; then
+            echo "::error title=No apply role::AWS_APPLY_ROLE_ARN is not set."
+            exit 1
+          fi
+
+  # --- Always show what would be destroyed, before anything is destroyed -------
+  plan:
+    name: destroy plan
+    needs: verify
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: ${{ env.TF_VERSION }}
+          terraform_wrapper: false
+
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ vars.AWS_APPLY_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+          role-session-name: gha-teardown-plan
+
+      - name: What exists and what it costs
+        run: ./scripts/cost-inventory.sh | tee -a "$GITHUB_STEP_SUMMARY"
+
+      - name: Destroy plan
+        env:
+          SELECTED: ${{ inputs.environment }}
+        run: |
+          target=$([[ "$SELECTED" == "all" ]] && echo "--all" || echo "$SELECTED")
+          {
+            echo '## Destroy plan'
+            echo '```'
+            ./scripts/teardown.sh "$target" --dry-run
+            echo '```'
+          } | tee -a "$GITHUB_STEP_SUMMARY"
+
+  # --- The destructive step, gated behind a GitHub Environment approval --------
+  destroy:
+    name: destroy
+    needs: [verify, plan]
+    if: ${{ inputs.dry_run == false }}
+    runs-on: ubuntu-latest
+    # Add required reviewers to the `teardown` environment in repository
+    # settings; without them this gate is nominal and the job runs immediately.
+    environment: teardown
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: ${{ env.TF_VERSION }}
+          terraform_wrapper: false
+
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ vars.AWS_APPLY_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+          role-session-name: gha-teardown
+
+      - name: Tear down
+        env:
+          SELECTED: ${{ inputs.environment }}
+        run: |
+          target=$([[ "$SELECTED" == "all" ]] && echo "--all" || echo "$SELECTED")
+          ./scripts/teardown.sh "$target" --yes 2>&1 | tee teardown.log
+
+      - name: Report what remains
+        if: always()
+        run: |
+          {
+            echo '## Remaining cost surface'
+            echo '```'
+            ./scripts/cost-inventory.sh || true
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"

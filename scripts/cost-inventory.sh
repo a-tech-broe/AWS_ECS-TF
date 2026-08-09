@@ -29,9 +29,15 @@ readonly PRICE_HOSTED_ZONE=0.50      # per hosted zone
 bold() { printf '\033[1m%s\033[0m\n' "$1"; }
 
 state_types() {
-  # Resource addresses in state for one environment, or nothing if uninitialised.
+  # Resource addresses in state for one environment. A fresh checkout has no
+  # .terraform directory, which would make a live environment look empty, so
+  # initialise first and let a genuine failure surface as "not deployed".
   local env="$1"
-  terraform -chdir="${REPO_ROOT}/envs/${env}" state list 2>/dev/null || true
+  local dir="${REPO_ROOT}/envs/${env}"
+  if [[ ! -d "${dir}/.terraform" ]]; then
+    terraform -chdir="$dir" init -backend-config=backend.hcl -input=false -no-color >/dev/null 2>&1 || return 0
+  fi
+  terraform -chdir="$dir" state list 2>/dev/null || true
 }
 
 count_type() {
