@@ -104,6 +104,22 @@ data "aws_iam_policy_document" "state_access" {
   }
 
   dynamic "statement" {
+    for_each = var.state_lock_table_arn != null ? [1] : []
+
+    content {
+      sid    = "TakeStateLock"
+      effect = "Allow"
+      actions = [
+        "dynamodb:DeleteItem",
+        "dynamodb:DescribeTable",
+        "dynamodb:GetItem",
+        "dynamodb:PutItem",
+      ]
+      resources = [var.state_lock_table_arn]
+    }
+  }
+
+  dynamic "statement" {
     for_each = var.state_kms_key_arn != null ? [1] : []
 
     content {

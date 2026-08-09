@@ -71,6 +71,11 @@ jobs:
     name: destroy plan
     needs: verify
     runs-on: ubuntu-latest
+    # Pins the OIDC subject to `environment:teardown-plan` rather than
+    # `ref:refs/heads/<branch>`, so a dispatch from any branch presents the same
+    # trusted subject. Leave this environment without reviewers: the dry run is
+    # read-only and gating it would only add friction.
+    environment: teardown-plan
     permissions:
       contents: read
       id-token: write

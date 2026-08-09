@@ -36,13 +36,30 @@ create_github_oidc = true
 create_oidc_provider = false
 
 github_subjects = [
+  # Classic subject form.
   "repo:a-tech-broe/AWS_ECS-TF:ref:refs/heads/main",
   "repo:a-tech-broe/AWS_ECS-TF:environment:shared",
   "repo:a-tech-broe/AWS_ECS-TF:environment:dev",
   "repo:a-tech-broe/AWS_ECS-TF:environment:staging",
   "repo:a-tech-broe/AWS_ECS-TF:environment:prod",
+  "repo:a-tech-broe/AWS_ECS-TF:environment:teardown",
+  "repo:a-tech-broe/AWS_ECS-TF:environment:teardown-plan",
+
+  # Immutable subject form. This repository reports a sub_claim_prefix of
+  # "repo:a-tech-broe@279850212/AWS_ECS-TF@1328246552", so tokens carry owner and
+  # repository database IDs. Both forms are listed because which one a token
+  # presents is a GitHub-side setting, and a mismatch fails closed with
+  # "Not authorized to perform sts:AssumeRoleWithWebIdentity".
+  "repo:a-tech-broe@279850212/AWS_ECS-TF@1328246552:ref:refs/heads/main",
+  "repo:a-tech-broe@279850212/AWS_ECS-TF@1328246552:environment:shared",
+  "repo:a-tech-broe@279850212/AWS_ECS-TF@1328246552:environment:dev",
+  "repo:a-tech-broe@279850212/AWS_ECS-TF@1328246552:environment:staging",
+  "repo:a-tech-broe@279850212/AWS_ECS-TF@1328246552:environment:prod",
+  "repo:a-tech-broe@279850212/AWS_ECS-TF@1328246552:environment:teardown",
+  "repo:a-tech-broe@279850212/AWS_ECS-TF@1328246552:environment:teardown-plan",
 ]
 
 # State lives in the pre-existing bokiti123 bucket. No state_kms_key_arn: that
 # bucket uses SSE-S3 (AES256), not a customer-managed key.
-state_bucket_arn = "arn:aws:s3:::bokiti123"
+state_bucket_arn     = "arn:aws:s3:::bokiti123"
+state_lock_table_arn = "arn:aws:dynamodb:us-east-1:694992586025:table/family_dyning"
