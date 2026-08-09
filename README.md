@@ -343,21 +343,58 @@ turns one AZ's failure into an egress outage for the whole environment.
 
 ---
 
-## Verification status
+## Deployment status
+
+Deployed to account `694992586025` / `us-east-1` on 2026-08-09.
+
+| Root | State | Detail |
+| --- | --- | --- |
+| `shared` | **deployed** | 19 resources. Zone `Z00990161YDCIUY3TO24J`, NS delegation, DNS query logging, ECR (`api`, `web`), both CI roles. |
+| `dev` | **deployed** | 69 resources. 2 AZ, shared NAT, ALB, WAF, ECS cluster. |
+| `staging` | **deployed** | 79 resources. 3 AZ, per-AZ NAT, ALB, WAF, ECS cluster. |
+| `prod` | **partial** | Blocked by a regional VPC quota, see below. Certificate, log bucket and WAF exist; VPC and everything downstream do not. |
+
+`terraform plan -detailed-exitcode` returns 0 for shared, dev and staging — all
+three are converged with no drift. All four state files live under the
+`ecs-platform/` prefix in `s3://bokiti123`.
+
+Live: ECS clusters `ecs-platform-dev` and `ecs-platform-staging`; ALBs for both;
+WAF web ACLs for all three environments; ACM certificates `dev.skybroe.com`,
+`staging.skybroe.com` and `skybroe.com` all `ISSUED`.
+
+No ECS services are running — every environment has `services = {}`, so the
+platform is standing but idle. That is the intended starting state.
+
+### prod is blocked on a VPC quota
+
+`us-east-1` allows 5 VPCs per region and is at 5: the AWS default VPC,
+`talatwo-vpc` and `banking-platform-prod` (both belonging to other projects), plus
+`ecs-platform-dev` and `ecs-platform-staging`. prod's apply failed with
+`VpcLimitExceeded`.
+
+A Service Quotas increase to 10 was requested on 2026-08-09 (request
+`d2d36a79cb2246f7a6874f7802e23659CzioQRyc`). Once approved:
+
+```bash
+make plan ENV=prod && make apply ENV=prod
+```
+
+prod's partial state needs no cleanup — the certificate for `skybroe.com` is
+already issued and will be reused.
+
+### A CIDR collision to be aware of
+
+`talatwo-vpc` uses `10.20.0.0/16`, the same range as `ecs-platform-staging`. They
+do not conflict today because nothing connects them, but staging can never be
+peered with that VPC. Change `vpc_cidr` in `envs/staging/terraform.tfvars` before
+any peering or Transit Gateway work.
+
+### Static analysis
 
 | Gate | Result |
 | --- | --- |
 | `terraform fmt -recursive -check` | clean |
-| `terraform validate` | 14/14 roots and modules valid, 0 warnings |
+| `terraform validate` | 14/14 roots and modules valid |
 | `tflint --recursive` (0.64.0, aws ruleset 0.48.0) | 0 issues |
-| Checkov | 374 passed, 0 failed, 45 documented suppressions |
+| Checkov | 380 passed, 0 failed, 57 documented suppressions |
 | Trivy | 0 misconfigurations |
-
-Two roots were additionally verified with a real `terraform plan` against AWS:
-
-- `envs/dev` carrying two services — a load-balanced API with a sidecar and a
-  queue worker — planned **109–112 resources, no errors**.
-- `envs/shared` planned **15 resources, no errors**.
-
-No `terraform apply` has been run. This repository has not created any AWS
-infrastructure yet.

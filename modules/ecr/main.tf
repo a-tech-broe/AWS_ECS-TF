@@ -16,6 +16,13 @@ locals {
 }
 
 resource "aws_ecr_repository" "this" {
+  # scan_on_push is deliberately false only when this module also manages
+  # registry-level ENHANCED (Inspector, continuous) scanning, which supersedes
+  # it. Any other combination leaves scan-on-push enabled, so no path here
+  # leaves images unscanned. Trivy evaluates the resolved plan and cannot see
+  # the registry-level configuration that replaces it.
+  #checkov:skip=CKV_AWS_163:Superseded by registry-level ENHANCED scanning
+  #trivy:ignore:AWS-0030
   for_each = local.repositories
 
   name                 = each.value

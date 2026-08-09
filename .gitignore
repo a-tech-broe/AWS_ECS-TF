@@ -4,6 +4,12 @@
 *.tfstate.*
 *.tfplan
 *.tfplan.json
+# `-out=tfplan` produces a file with no extension, which *.tfplan does not match.
+# Plan files embed the fully resolved configuration, including any sensitive
+# values, so they must never be committed.
+tfplan
+tfplan.*
+tfplan-*
 crash.log
 crash.*.log
 .terraform.lock.hcl.bak

@@ -98,6 +98,12 @@ variable "access_logs_retention_days" {
   default     = 90
 }
 
+variable "access_logs_transition_days" {
+  description = "Days before access logs move to STANDARD_IA. The transition is skipped entirely when it would land on or after the expiry day, which S3 rejects."
+  type        = number
+  default     = 30
+}
+
 variable "access_logs_bucket_force_destroy" {
   description = "Allow Terraform to delete the log bucket while it still holds objects. Keep false in production."
   type        = bool
