@@ -92,9 +92,21 @@ variable "subject_alternative_names" {
 }
 
 variable "route53_zone_id" {
-  description = "Hosted zone used for certificate validation and service ALIAS records."
+  description = "Hosted zone ID used for certificate validation and service ALIAS records. Prefer route53_zone_name so the same value does not have to be pasted into every environment."
   type        = string
   default     = null
+}
+
+variable "route53_zone_name" {
+  description = "Hosted zone to look up by name, e.g. 'claudiq.com'. One zone serves every environment; each environment issues a certificate for its own subdomain within it. Ignored when route53_zone_id is set."
+  type        = string
+  default     = null
+}
+
+variable "certificate_validation_timeout" {
+  description = "How long to wait for ACM DNS validation before failing. Validation normally completes in minutes; a long wait almost always means the domain's NS records are not delegated to this hosted zone."
+  type        = string
+  default     = "15m"
 }
 
 ###############################################################################

@@ -14,12 +14,16 @@ enable_vpc_endpoints    = true
 flow_log_retention_days = 14
 
 # --- TLS / DNS ----------------------------------------------------------------
-# Either set certificate_arn to an existing certificate, or set domain_name and
-# route53_zone_id and this root will issue and DNS-validate one.
-# domain_name               = "dev.example.com"
-# subject_alternative_names = ["*.dev.example.com"]
-# route53_zone_id           = "Z0123456789ABCDEFGHIJ"
-certificate_arn = null
+# The hosted zone is created once by envs/shared and looked up here by name, so
+# the zone ID never has to be copied between environments. A certificate for
+# these names is issued and DNS-validated automatically.
+#
+# This cannot succeed until claudiq.com's registrar delegates NS records to that
+# zone; without delegation the apply waits out certificate_validation_timeout
+# and fails.
+route53_zone_name         = "claudiq.com"
+domain_name               = "dev.claudiq.com"
+subject_alternative_names = ["*.dev.claudiq.com"]
 
 # --- Edge ---------------------------------------------------------------------
 alb_deletion_protection    = false
@@ -59,7 +63,7 @@ services = {}
 #     min_capacity           = 1
 #     max_capacity           = 4
 #     listener_rule_priority = 100
-#     host_headers           = ["api.dev.example.com"]
+#     host_headers           = ["api.dev.claudiq.com"]
 #     health_check_path      = "/healthz"
 #     create_dns_record      = true
 #
