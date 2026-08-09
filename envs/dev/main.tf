@@ -121,9 +121,10 @@ resource "aws_acm_certificate_validation" "this" {
 module "alb" {
   source = "../../modules/alb"
 
-  name       = "${local.name}-alb"
-  vpc_id     = module.vpc.vpc_id
-  subnet_ids = module.vpc.public_subnet_ids
+  name           = "${local.name}-alb"
+  vpc_id         = module.vpc.vpc_id
+  vpc_cidr_block = module.vpc.vpc_cidr_block
+  subnet_ids     = module.vpc.public_subnet_ids
 
   certificate_arn     = local.certificate_arn
   ingress_cidr_blocks = var.alb_ingress_cidr_blocks

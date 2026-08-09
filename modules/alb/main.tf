@@ -69,12 +69,14 @@ resource "aws_vpc_security_group_ingress_rule" "http_redirect" {
   ip_protocol       = "tcp"
 }
 
-# Egress is intentionally open to the VPC only; service modules add the matching
-# ingress rule on their own security groups.
+# Egress is restricted to the VPC: every target this load balancer forwards to
+# lives in a private subnet, so it has no legitimate reason to reach the
+# internet. Service modules add the matching ingress rule on their own
+# security groups.
 resource "aws_vpc_security_group_egress_rule" "to_vpc" {
   security_group_id = aws_security_group.this.id
-  description       = "All egress to targets"
-  cidr_ipv4         = "0.0.0.0/0"
+  description       = "Forwarding to targets inside the VPC"
+  cidr_ipv4         = var.vpc_cidr_block
   ip_protocol       = "-1"
 }
 
@@ -121,6 +123,8 @@ resource "aws_s3_bucket_ownership_controls" "logs" {
 }
 
 # ELB access log delivery supports SSE-S3 only, so a CMK cannot be used here.
+# Trivy's own guidance for this check notes the same exception for log sinks.
+#trivy:ignore:AWS-0132
 resource "aws_s3_bucket_server_side_encryption_configuration" "logs" {
   count = local.create_logs_bucket ? 1 : 0
 
@@ -259,6 +263,10 @@ resource "aws_s3_bucket_policy" "logs" {
 
 # --- Load balancer ------------------------------------------------------------
 
+# An internet-facing load balancer is the entire purpose of this module when
+# internal = false. Exposure is a deliberate, reviewed choice, and everything
+# behind it sits in private subnets.
+#trivy:ignore:AWS-0053
 resource "aws_lb" "this" {
   # Deletion protection is driven by var.enable_deletion_protection (true by
   # default, deliberately false in dev). The WAF web ACL is associated by the

@@ -13,6 +13,16 @@ variable "vpc_id" {
   type        = string
 }
 
+variable "vpc_cidr_block" {
+  description = "CIDR of the VPC. The load balancer's egress is confined to this range, since all of its targets are inside the VPC."
+  type        = string
+
+  validation {
+    condition     = can(cidrhost(var.vpc_cidr_block, 0))
+    error_message = "vpc_cidr_block must be a valid CIDR."
+  }
+}
+
 variable "subnet_ids" {
   description = "Subnets for the load balancer. Public subnets for an internet-facing ALB, private for an internal one."
   type        = list(string)
