@@ -126,32 +126,42 @@ happen from a workstation.
 
 ### 3. Delegate the domain
 
-The platform serves **`claudiq.com`**. `envs/shared` creates one public hosted
+The platform serves **`skybroe.com`**. `envs/shared` creates one public hosted
 zone for it; each environment issues its own certificate for its own name inside
 that zone:
 
 | Environment | Certificate names |
 | --- | --- |
-| dev | `dev.claudiq.com`, `*.dev.claudiq.com` |
-| staging | `staging.claudiq.com`, `*.staging.claudiq.com` |
-| prod | `claudiq.com`, `*.claudiq.com` |
+| dev | `dev.skybroe.com`, `*.dev.skybroe.com` |
+| staging | `staging.skybroe.com`, `*.staging.skybroe.com` |
+| prod | `skybroe.com`, `*.skybroe.com` |
 
-> **Delegation is required and is not automatic.** `claudiq.com` is **not**
-> registered in this AWS account — only `mallamshehusuya.com` and `skybroe.com`
-> are. After applying `envs/shared`, take its `route53_name_servers` output and
-> set exactly those four NS records at whichever registrar holds `claudiq.com`.
-> If the domain is not registered anywhere, register it first.
->
-> ACM cannot validate a certificate for a domain that does not resolve to this
-> zone. Until delegation is in place, every environment apply waits out
-> `certificate_validation_timeout` (default 15m) and then fails. That is the
-> single most likely reason a first apply hangs.
+**Delegation is automated.** `skybroe.com` is registered in this account through
+Route 53 Domains (auto-renew on, expires 2027-05-29), so `envs/shared` points the
+registered domain's name servers straight at the zone it creates — via
+`aws_route53domains_registered_domain`, controlled by `manage_domain_delegation`.
+There is no manual registrar step.
+
+> **This rewrites live delegation.** The domain's NS records currently point at
+> Route 53 nameservers for a hosted zone that no longer exists in this account,
+> so `skybroe.com` does not resolve today and nothing is being served from it.
+> Repointing it is therefore safe here. If anything *else* ever becomes
+> authoritative for this domain — including a zone in another AWS account — set
+> `manage_domain_delegation = false` before applying, or this will take it over.
 
 ```bash
 make apply ENV=shared
-terraform -chdir=envs/shared output route53_name_servers   # → set these at the registrar
-dig NS claudiq.com                                          # confirm before continuing
+dig NS skybroe.com    # should return the four ns-*.awsdns-* servers of the new zone
 ```
+
+Propagation takes a few minutes. ACM cannot validate until it completes, so
+confirm the NS records resolve before applying an environment — otherwise the
+apply waits out `certificate_validation_timeout` (default 15m) and fails. That
+is the most likely reason a first apply hangs.
+
+For a domain registered **outside** this account, leave
+`manage_domain_delegation = false`, apply `envs/shared`, then copy its
+`route53_name_servers` output to the registrar by hand.
 
 Environments find the zone by name, so no zone ID is copied between them. This
 does mean **`envs/shared` must be applied before dev/staging/prod can even
@@ -188,7 +198,7 @@ services = {
     min_capacity           = 3
     max_capacity           = 20
     listener_rule_priority = 100          # unique across the listener
-    host_headers           = ["api.claudiq.com"]
+    host_headers           = ["api.skybroe.com"]
     health_check_path      = "/healthz"
     create_dns_record      = true
 
@@ -297,6 +307,13 @@ globally. Current state: **374 passed, 0 failed, 45 documented suppressions.**
   CMK. This is an AWS constraint, not a choice.
 - The default `apply_policy_arns` is `PowerUserAccess`. Scope it down to the
   resource set you actually use once the platform stabilises.
+- DNSSEC is not enabled on the hosted zone. It only takes effect once DS records
+  are published at the registrar, and a half-configured chain of trust makes a
+  domain unresolvable rather than merely unsigned — so it is a deliberate step
+  to take after delegation is stable, not part of first stand-up.
+- Certificates carry a wildcard SAN so services can add hostnames without a
+  reissue. One private key therefore covers the whole subdomain space; list
+  explicit SANs instead if that trade-off is unacceptable.
 
 ---
 

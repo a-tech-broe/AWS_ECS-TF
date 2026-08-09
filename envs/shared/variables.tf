@@ -83,9 +83,20 @@ variable "create_route53_zone" {
 }
 
 variable "route53_zone_name" {
-  description = "Domain for the public hosted zone, e.g. 'claudiq.com'."
+  description = "Domain for the public hosted zone, e.g. 'skybroe.com'."
   type        = string
   default     = ""
+}
+
+variable "manage_domain_delegation" {
+  description = <<-EOT
+    Point the registered domain's name servers at the hosted zone created here.
+    Only valid when the domain is registered in this account via Route 53
+    Domains. This rewrites live delegation for the domain: enable it only when
+    this platform is meant to be authoritative for it.
+  EOT
+  type        = bool
+  default     = false
 }
 
 variable "enable_dns_query_logging" {

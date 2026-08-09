@@ -17,7 +17,12 @@ manage_registry_scanning = true
 # route53_name_servers output and set exactly those NS records at the domain's
 # registrar. Until that delegation exists, ACM validation cannot complete.
 create_route53_zone = true
-route53_zone_name   = "claudiq.com"
+route53_zone_name   = "skybroe.com"
+
+# skybroe.com is registered in this account, so Terraform can repoint its name
+# servers at the new zone directly. Its current NS records point at a Route 53
+# zone that no longer exists here, so the domain does not resolve today.
+manage_domain_delegation = true
 
 # --- CI/CD --------------------------------------------------------------------
 # Replace <owner> with the GitHub org or user that owns this repository.
