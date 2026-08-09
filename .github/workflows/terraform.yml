@@ -1,0 +1,204 @@
+name: terraform
+
+# Pull requests get validation and a plan posted as a comment. Applies happen
+# only from main, through a GitHub Environment so they can require approval.
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: Environment to apply
+        required: true
+        type: choice
+        options: [shared, dev, staging, prod]
+
+permissions:
+  contents: read
+  id-token: write # required for OIDC role assumption
+  pull-requests: write
+
+env:
+  TF_VERSION: "1.14.3"
+  AWS_REGION: us-east-1
+  TF_IN_AUTOMATION: "true"
+
+concurrency:
+  group: terraform-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  # --- Repository-wide static checks -----------------------------------------
+  lint:
+    name: lint
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: ${{ env.TF_VERSION }}
+          terraform_wrapper: false
+
+      - name: terraform fmt
+        run: terraform fmt -recursive -check -diff .
+
+      - name: Validate every module and environment
+        run: |
+          set -euo pipefail
+          for d in modules/*/ envs/*/ bootstrap/; do
+            echo "::group::validate $d"
+            terraform -chdir="$d" init -backend=false -input=false
+            terraform -chdir="$d" validate
+            echo "::endgroup::"
+          done
+
+      - uses: terraform-linters/setup-tflint@v4
+        with:
+          tflint_version: latest
+
+      - name: tflint
+        run: |
+          tflint --init
+          tflint --recursive --config="$(pwd)/.tflint.hcl"
+
+  # --- Static security analysis ----------------------------------------------
+  security:
+    name: security
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Checkov
+        uses: bridgecrewio/checkov-action@master
+        with:
+          config_file: .checkov.yaml
+          output_format: cli,sarif
+          output_file_path: console,checkov.sarif
+          soft_fail: false
+
+      - name: Upload Checkov SARIF
+        uses: github/codeql-action/upload-sarif@v3
+        if: always()
+        with:
+          sarif_file: checkov.sarif
+          category: checkov
+
+      - name: Trivy IaC scan
+        uses: aquasecurity/trivy-action@master
+        with:
+          scan-type: config
+          scan-ref: .
+          severity: CRITICAL,HIGH
+          exit-code: "1"
+          trivy-config: ""
+
+  # --- Plan on pull requests --------------------------------------------------
+  plan:
+    name: plan (${{ matrix.environment }})
+    runs-on: ubuntu-latest
+    needs: [lint, security]
+    if: github.event_name == 'pull_request'
+    strategy:
+      fail-fast: false
+      matrix:
+        environment: [shared, dev, staging, prod]
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: ${{ env.TF_VERSION }}
+          terraform_wrapper: false
+
+      - name: Assume the read-only plan role
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ vars.AWS_PLAN_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+          role-session-name: gha-plan-${{ matrix.environment }}
+
+      - name: Init
+        working-directory: envs/${{ matrix.environment }}
+        run: terraform init -input=false -backend-config=backend.hcl
+
+      - name: Plan
+        id: plan
+        working-directory: envs/${{ matrix.environment }}
+        run: |
+          set +e
+          terraform plan -input=false -lock-timeout=5m -no-color -out=tfplan > plan.txt 2>&1
+          code=$?
+          set -e
+          # Keep the comment under GitHub's 65535-character limit.
+          tail -c 60000 plan.txt > plan.trimmed
+          exit $code
+
+      - name: Comment plan on the pull request
+        if: always()
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs = require('fs');
+            const env = '${{ matrix.environment }}';
+            const marker = `<!-- tf-plan-${env} -->`;
+            let body;
+            try {
+              body = fs.readFileSync('envs/' + env + '/plan.trimmed', 'utf8');
+            } catch (e) {
+              body = 'Plan produced no output.';
+            }
+            const comment = `${marker}\n### Terraform plan — \`${env}\`\n\n<details><summary>Show plan</summary>\n\n\`\`\`terraform\n${body}\n\`\`\`\n\n</details>`;
+            const {owner, repo} = context.repo;
+            const issue_number = context.issue.number;
+            const existing = await github.rest.issues.listComments({owner, repo, issue_number});
+            const mine = existing.data.find(c => c.body && c.body.includes(marker));
+            if (mine) {
+              await github.rest.issues.updateComment({owner, repo, comment_id: mine.id, body: comment});
+            } else {
+              await github.rest.issues.createComment({owner, repo, issue_number, body: comment});
+            }
+
+  # --- Apply from main --------------------------------------------------------
+  apply:
+    name: apply (${{ inputs.environment || matrix.environment }})
+    runs-on: ubuntu-latest
+    needs: [lint, security]
+    if: github.event_name == 'push' || github.event_name == 'workflow_dispatch'
+    strategy:
+      # Sequential: shared owns ECR and the CI roles the others depend on, and
+      # prod must never apply before staging has proved the change.
+      max-parallel: 1
+      fail-fast: true
+      matrix:
+        environment: ${{ github.event_name == 'workflow_dispatch' && fromJSON(format('["{0}"]', inputs.environment)) || fromJSON('["shared","dev","staging","prod"]') }}
+    environment: ${{ matrix.environment }} # gate prod behind a required reviewer here
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: ${{ env.TF_VERSION }}
+          terraform_wrapper: false
+
+      - name: Assume the apply role
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ vars.AWS_APPLY_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+          role-session-name: gha-apply-${{ matrix.environment }}
+
+      - name: Init
+        working-directory: envs/${{ matrix.environment }}
+        run: terraform init -input=false -backend-config=backend.hcl
+
+      # Plan and apply the same artifact, so what was reviewed is what runs.
+      - name: Plan
+        working-directory: envs/${{ matrix.environment }}
+        run: terraform plan -input=false -lock-timeout=5m -out=tfplan
+
+      - name: Apply
+        working-directory: envs/${{ matrix.environment }}
+        run: terraform apply -input=false -lock-timeout=5m tfplan

@@ -1,0 +1,40 @@
+# Terraform
+**/.terraform/*
+*.tfstate
+*.tfstate.*
+*.tfplan
+*.tfplan.json
+crash.log
+crash.*.log
+.terraform.lock.hcl.bak
+override.tf
+override.tf.json
+*_override.tf
+*_override.tf.json
+.terraformrc
+.terraform.*
+.terraform
+terraform.rc
+
+# The dependency lock file must be committed: it is what pins provider versions
+# and hashes so CI resolves exactly what was reviewed locally.
+!.terraform.lock.hcl
+!**/.terraform.lock.hcl
+
+# Sensitive / local-only variable files.
+# Committed tfvars are non-secret and intentionally tracked (see envs/*/terraform.tfvars).
+*.auto.tfvars
+secrets.tfvars
+*.secret.tfvars
+
+# Tooling output
+.tflint.d/
+checkov_report.*
+tfsec.json
+.infracost/
+
+# OS / editor
+.DS_Store
+Thumbs.db
+.idea/
+*.swp
