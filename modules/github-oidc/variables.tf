@@ -4,7 +4,16 @@ variable "name" {
 }
 
 variable "create_oidc_provider" {
-  description = "Create the GitHub OIDC provider. Set false when another stack in this account already created it, since it is a per-account singleton."
+  description = <<-EOT
+    Create the GitHub OIDC provider. It is a per-account singleton, so set false
+    when the account already has one and this module will reference it by its
+    deterministic ARN instead.
+
+    Creating it requires IAM permissions that the CI apply role deliberately
+    does not hold — an identity provider is a trust anchor, and letting the
+    pipeline mint one would let it grant itself access from anywhere. Leave this
+    false in CI and create the provider once as an administrator.
+  EOT
   type        = bool
   default     = true
 }

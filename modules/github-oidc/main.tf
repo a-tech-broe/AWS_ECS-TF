@@ -6,9 +6,27 @@
 # No long-lived access keys exist anywhere in this design.
 ###############################################################################
 
+data "aws_caller_identity" "current" {}
+data "aws_partition" "current" {}
+
 locals {
-  provider_url = "https://token.actions.githubusercontent.com"
-  provider_arn = var.create_oidc_provider ? aws_iam_openid_connect_provider.github[0].arn : data.aws_iam_openid_connect_provider.github[0].arn
+  provider_url  = "https://token.actions.githubusercontent.com"
+  provider_host = "token.actions.githubusercontent.com"
+
+  # When adopting an existing provider the ARN is constructed rather than looked
+  # up. A data source would need iam:ListOpenIDConnectProviders, which
+  # PowerUserAccess denies, so the CI role that runs this module could not read
+  # it. The ARN format is fixed and there is exactly one provider per host per
+  # account, so constructing it is deterministic — and if the provider does not
+  # exist, role creation fails immediately with an invalid-principal error.
+  adopted_provider_arn = format(
+    "arn:%s:iam::%s:oidc-provider/%s",
+    data.aws_partition.current.partition,
+    data.aws_caller_identity.current.account_id,
+    local.provider_host,
+  )
+
+  provider_arn = var.create_oidc_provider ? aws_iam_openid_connect_provider.github[0].arn : local.adopted_provider_arn
 
   # Plan runs from pull requests; apply is restricted to whatever subjects the
   # caller listed, which should be branch- or environment-scoped.
@@ -26,12 +44,6 @@ resource "aws_iam_openid_connect_provider" "github" {
   thumbprint_list = ["6938fd4d98bab03faadb97b34396831e3780aea1"]
 
   tags = merge(var.tags, { Name = "${var.name}-github-oidc" })
-}
-
-data "aws_iam_openid_connect_provider" "github" {
-  count = var.create_oidc_provider ? 0 : 1
-
-  url = local.provider_url
 }
 
 data "aws_iam_policy_document" "assume_plan" {
