@@ -1,0 +1,10 @@
+# Every suppression lives inline next to the resource it applies to, as a
+# `#checkov:skip=<id>:<reason>` comment, so the justification is reviewable in
+# the same diff as the code. Nothing is skipped globally.
+framework:
+  - terraform
+directory:
+  - .
+quiet: true
+compact: true
+download-external-modules: false
