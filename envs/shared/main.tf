@@ -12,6 +12,8 @@ locals {
   tags = merge(var.tags, {
     Component = "shared"
   })
+
+  dns_query_logging = var.create_route53_zone && var.enable_dns_query_logging
 }
 
 module "ecr_kms" {
@@ -56,6 +58,74 @@ module "github_oidc" {
   apply_inline_policy_json = data.aws_iam_policy_document.terraform_iam.json
 
   tags = local.tags
+}
+
+# --- DNS ----------------------------------------------------------------------
+#
+# A single public hosted zone lives here rather than per environment: the zone is
+# the delegation point for the whole domain, and three roots each owning a copy
+# would fight over the same NS records. Environments look it up by name.
+resource "aws_route53_zone" "this" {
+  # DNSSEC is deliberately not enabled: it only takes effect once DS records are
+  # published at the registrar, and a half-configured chain of trust makes the
+  # domain unresolvable rather than merely unsigned. Turn it on as a considered
+  # step after delegation is stable, not as part of first stand-up.
+  #checkov:skip=CKV2_AWS_38:DNSSEC requires registrar DS records; enabling it blind can take the domain offline
+  #checkov:skip=CKV2_AWS_39:Query logging is enabled via aws_route53_query_log.this; the graph does not follow it across counted resources
+  count = var.create_route53_zone ? 1 : 0
+
+  name    = var.route53_zone_name
+  comment = "Public zone for ${local.name}"
+
+  tags = local.tags
+}
+
+# Query logging must live in us-east-1 and write to a log group whose name
+# begins with /aws/route53/. Route 53 writes through a CloudWatch Logs resource
+# policy rather than an IAM role.
+resource "aws_cloudwatch_log_group" "dns_queries" {
+  #checkov:skip=CKV_AWS_158:Route 53 query logging does not support CMK-encrypted log groups
+  #checkov:skip=CKV_AWS_338:Retention is set per account via dns_query_log_retention_days
+  count = local.dns_query_logging ? 1 : 0
+
+  name              = "/aws/route53/${var.route53_zone_name}"
+  retention_in_days = var.dns_query_log_retention_days
+
+  tags = local.tags
+}
+
+data "aws_iam_policy_document" "route53_query_logging" {
+  count = local.dns_query_logging ? 1 : 0
+
+  statement {
+    effect = "Allow"
+    actions = [
+      "logs:CreateLogStream",
+      "logs:PutLogEvents",
+    ]
+    resources = ["arn:aws:logs:us-east-1:${data.aws_caller_identity.current.account_id}:log-group:/aws/route53/*"]
+
+    principals {
+      type        = "Service"
+      identifiers = ["route53.amazonaws.com"]
+    }
+  }
+}
+
+resource "aws_cloudwatch_log_resource_policy" "route53_query_logging" {
+  count = local.dns_query_logging ? 1 : 0
+
+  policy_name     = "${local.name}-route53-query-logging"
+  policy_document = data.aws_iam_policy_document.route53_query_logging[0].json
+}
+
+resource "aws_route53_query_log" "this" {
+  count = local.dns_query_logging ? 1 : 0
+
+  zone_id                  = aws_route53_zone.this[0].zone_id
+  cloudwatch_log_group_arn = aws_cloudwatch_log_group.dns_queries[0].arn
+
+  depends_on = [aws_cloudwatch_log_resource_policy.route53_query_logging]
 }
 
 data "aws_caller_identity" "current" {}

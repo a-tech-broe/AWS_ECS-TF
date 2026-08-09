@@ -17,6 +17,11 @@ locals {
   issue_certificate = var.certificate_arn == null
   certificate_arn   = local.issue_certificate ? aws_acm_certificate_validation.this[0].certificate_arn : var.certificate_arn
 
+  # Derived from variables only, so it is known at plan time and safe to use in
+  # count/for_each. The resolved zone ID below is a value, not a decision.
+  dns_enabled     = var.route53_zone_id != null || var.route53_zone_name != null
+  route53_zone_id = var.route53_zone_id != null ? var.route53_zone_id : (var.route53_zone_name != null ? data.aws_route53_zone.this[0].zone_id : null)
+
   # Every host header of every service that asked for DNS, flattened into one
   # record per name so two services cannot fight over the same record.
   dns_records = {
@@ -74,7 +79,19 @@ module "vpc" {
 # TLS
 ###############################################################################
 
+data "aws_route53_zone" "this" {
+  count = var.route53_zone_id == null && var.route53_zone_name != null ? 1 : 0
+
+  name         = var.route53_zone_name
+  private_zone = false
+}
+
 resource "aws_acm_certificate" "this" {
+  # The wildcard SAN is deliberate: services declare their own host_headers, and
+  # without it every new service would need a certificate reissue and an ALB
+  # listener change. The trade-off is that one private key covers the whole
+  # subdomain space — list explicit SANs instead if that is unacceptable.
+  #checkov:skip=CKV2_AWS_71:Wildcard SAN is required for the per-service host routing model
   count = local.issue_certificate ? 1 : 0
 
   domain_name               = var.domain_name
@@ -87,8 +104,8 @@ resource "aws_acm_certificate" "this" {
     create_before_destroy = true
 
     precondition {
-      condition     = var.domain_name != null && var.route53_zone_id != null
-      error_message = "Set certificate_arn to reuse an existing certificate, or set both domain_name and route53_zone_id so one can be issued and DNS-validated."
+      condition     = var.domain_name != null && local.dns_enabled
+      error_message = "Set certificate_arn to reuse an existing certificate, or set domain_name plus one of route53_zone_name / route53_zone_id so one can be issued and DNS-validated."
     }
   }
 }
@@ -99,7 +116,7 @@ resource "aws_route53_record" "certificate_validation" {
     opt.domain_name => opt
   } : {}
 
-  zone_id         = var.route53_zone_id
+  zone_id         = local.route53_zone_id
   name            = each.value.resource_record_name
   type            = each.value.resource_record_type
   records         = [each.value.resource_record_value]
@@ -112,6 +129,12 @@ resource "aws_acm_certificate_validation" "this" {
 
   certificate_arn         = aws_acm_certificate.this[0].arn
   validation_record_fqdns = [for r in aws_route53_record.certificate_validation : r.fqdn]
+
+  # Without a bound this blocks for 45 minutes when NS delegation is missing,
+  # which is the most common reason validation never completes.
+  timeouts {
+    create = var.certificate_validation_timeout
+  }
 }
 
 ###############################################################################
@@ -284,9 +307,9 @@ module "service" {
 ###############################################################################
 
 resource "aws_route53_record" "service" {
-  for_each = var.route53_zone_id != null ? local.dns_records : {}
+  for_each = local.dns_enabled ? local.dns_records : {}
 
-  zone_id = var.route53_zone_id
+  zone_id = local.route53_zone_id
   name    = each.value.host
   type    = "A"
 

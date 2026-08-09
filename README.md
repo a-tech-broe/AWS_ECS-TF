@@ -124,10 +124,45 @@ This ordering is inherent, not incidental: the pipeline's own identity is one of
 the things the pipeline manages, so the first apply of `envs/shared` has to
 happen from a workstation.
 
-### 3. Deploy an environment
+### 3. Delegate the domain
 
-Set `domain_name` + `route53_zone_id` (a certificate is issued and DNS-validated
-for you) **or** `certificate_arn` for an existing certificate. Then:
+The platform serves **`claudiq.com`**. `envs/shared` creates one public hosted
+zone for it; each environment issues its own certificate for its own name inside
+that zone:
+
+| Environment | Certificate names |
+| --- | --- |
+| dev | `dev.claudiq.com`, `*.dev.claudiq.com` |
+| staging | `staging.claudiq.com`, `*.staging.claudiq.com` |
+| prod | `claudiq.com`, `*.claudiq.com` |
+
+> **Delegation is required and is not automatic.** `claudiq.com` is **not**
+> registered in this AWS account — only `mallamshehusuya.com` and `skybroe.com`
+> are. After applying `envs/shared`, take its `route53_name_servers` output and
+> set exactly those four NS records at whichever registrar holds `claudiq.com`.
+> If the domain is not registered anywhere, register it first.
+>
+> ACM cannot validate a certificate for a domain that does not resolve to this
+> zone. Until delegation is in place, every environment apply waits out
+> `certificate_validation_timeout` (default 15m) and then fails. That is the
+> single most likely reason a first apply hangs.
+
+```bash
+make apply ENV=shared
+terraform -chdir=envs/shared output route53_name_servers   # → set these at the registrar
+dig NS claudiq.com                                          # confirm before continuing
+```
+
+Environments find the zone by name, so no zone ID is copied between them. This
+does mean **`envs/shared` must be applied before dev/staging/prod can even
+plan** — without the zone, the lookup fails with `no matching Route 53 Hosted
+Zone found`. To decouple an environment from that ordering, set its
+`route53_zone_id` explicitly; it takes precedence and skips the lookup.
+
+To use a certificate you already hold instead, set `certificate_arn` and leave
+the domain variables unset.
+
+### 4. Deploy an environment
 
 ```bash
 make init ENV=dev
@@ -153,7 +188,7 @@ services = {
     min_capacity           = 3
     max_capacity           = 20
     listener_rule_priority = 100          # unique across the listener
-    host_headers           = ["api.example.com"]
+    host_headers           = ["api.claudiq.com"]
     health_check_path      = "/healthz"
     create_dns_record      = true
 

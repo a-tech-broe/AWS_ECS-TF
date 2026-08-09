@@ -76,6 +76,30 @@ variable "state_kms_key_arn" {
   default     = null
 }
 
+variable "create_route53_zone" {
+  description = "Create the public hosted zone. One zone serves every environment: prod takes the apex, the others take subdomains within it."
+  type        = bool
+  default     = false
+}
+
+variable "route53_zone_name" {
+  description = "Domain for the public hosted zone, e.g. 'claudiq.com'."
+  type        = string
+  default     = ""
+}
+
+variable "enable_dns_query_logging" {
+  description = "Log Route 53 public DNS queries to CloudWatch. Consistent with the VPC flow, ALB access and WAF logging elsewhere in the platform, and the cheapest early warning for domain enumeration."
+  type        = bool
+  default     = true
+}
+
+variable "dns_query_log_retention_days" {
+  description = "Retention for the Route 53 query log group."
+  type        = number
+  default     = 90
+}
+
 variable "tags" {
   description = "Additional tags applied to shared resources."
   type        = map(string)

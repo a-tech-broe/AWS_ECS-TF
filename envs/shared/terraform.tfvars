@@ -12,6 +12,13 @@ ecr_repositories = [
 enable_enhanced_scanning = true
 manage_registry_scanning = true
 
+# --- DNS ----------------------------------------------------------------------
+# One public hosted zone for the whole platform. After applying, take the
+# route53_name_servers output and set exactly those NS records at the domain's
+# registrar. Until that delegation exists, ACM validation cannot complete.
+create_route53_zone = true
+route53_zone_name   = "claudiq.com"
+
 # --- CI/CD --------------------------------------------------------------------
 # Replace <owner> with the GitHub org or user that owns this repository.
 # Subjects must name the repository explicitly; a wildcard here would let any
