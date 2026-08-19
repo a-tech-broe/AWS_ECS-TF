@@ -6,13 +6,27 @@
 # briefly leaving the listener pointing at nothing.
 ###############################################################################
 
+locals {
+  # create_before_destroy cannot build the replacement while a target group of
+  # the same name still exists, so the name has to change whenever one of the
+  # replace-forcing attributes does. `name_prefix` would do this too, but AWS
+  # caps it at six characters, which is not enough to tell two services apart.
+  # `name` is validated to 24 characters, so this stays inside the 32-character
+  # target group limit.
+  target_group_name = "${var.name}-${substr(sha256(jsonencode([
+    var.container_port,
+    var.target_group_protocol_version,
+    var.vpc_id,
+  ])), 0, 6)}"
+}
+
 resource "aws_lb_target_group" "this" {
   # TLS terminates at the ALB; the hop to the task is plain HTTP inside a
   # private subnet, reachable only from the load balancer's security group.
   #checkov:skip=CKV_AWS_378:TLS terminates at the ALB, backend hop is inside the VPC
   count = var.enable_load_balancer ? 1 : 0
 
-  name        = "${var.name}-tg"
+  name        = local.target_group_name
   vpc_id      = var.vpc_id
   port        = var.container_port
   protocol    = "HTTP"

@@ -33,7 +33,10 @@ locals {
 # --- Security group -----------------------------------------------------------
 
 resource "aws_security_group" "this" {
-  name        = "${var.name}-alb"
+  # name_prefix, not name: create_before_destroy is only useful if the
+  # replacement can actually be created first, and a fixed name collides with
+  # the group still in place.
+  name_prefix = "${var.name}-alb-"
   description = "Ingress to the ${var.name} load balancer"
   vpc_id      = var.vpc_id
 

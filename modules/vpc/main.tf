@@ -232,7 +232,9 @@ resource "aws_security_group" "endpoints" {
   #checkov:skip=CKV2_AWS_5:Attached to aws_vpc_endpoint.interface below
   count = var.enable_vpc_endpoints ? 1 : 0
 
-  name        = "${var.name}-vpc-endpoints"
+  # name_prefix, not name: a fixed name makes the create_before_destroy below
+  # fail on a duplicate name instead of rolling forward.
+  name_prefix = "${var.name}-vpc-endpoints-"
   description = "Allows HTTPS from inside the VPC to interface endpoints"
   vpc_id      = aws_vpc.this.id
 

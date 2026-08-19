@@ -120,7 +120,9 @@ resource "aws_cloudwatch_log_group" "this" {
 # --- Networking ---------------------------------------------------------------
 
 resource "aws_security_group" "this" {
-  name        = "${var.name}-ecs-tasks"
+  # name_prefix, not name: create_before_destroy needs the replacement to be
+  # creatable while the original still exists, which a fixed name prevents.
+  name_prefix = "${var.name}-ecs-tasks-"
   description = "Task security group for the ${var.name} service"
   vpc_id      = var.vpc_id
 
