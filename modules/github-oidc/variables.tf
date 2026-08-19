@@ -30,6 +30,18 @@ variable "github_subjects" {
   }
 }
 
+variable "plan_role_name" {
+  description = "Name for the plan role. Null derives it as '<name>-gha-plan'. Set this only to adopt a role that already exists under a different name."
+  type        = string
+  default     = null
+}
+
+variable "apply_role_name" {
+  description = "Name for the apply role. Null derives it as '<name>-gha-apply'. Set this only to adopt a role that already exists under a different name."
+  type        = string
+  default     = null
+}
+
 variable "plan_policy_arns" {
   description = "Managed policy ARNs attached to the read-only plan role."
   type        = list(string)
