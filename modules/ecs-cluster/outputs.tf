@@ -27,3 +27,8 @@ output "exec_log_group_name" {
   description = "CloudWatch log group holding the ECS Exec audit trail, or null when disabled."
   value       = var.enable_execute_command_logging ? aws_cloudwatch_log_group.exec[0].name : null
 }
+
+output "exec_log_group_arn" {
+  description = "ARN of the ECS Exec audit log group, or null when disabled. Task roles need write access to it, otherwise exec sessions fail to start."
+  value       = var.enable_execute_command_logging ? aws_cloudwatch_log_group.exec[0].arn : null
+}

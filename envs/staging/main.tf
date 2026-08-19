@@ -296,6 +296,7 @@ module "service" {
   wait_for_steady_state  = each.value.wait_for_steady_state
   log_retention_days     = coalesce(each.value.log_retention_days, var.log_retention_days)
   kms_key_arn            = module.kms.key_arn
+  exec_log_group_arn     = module.ecs_cluster.exec_log_group_arn
 
   alarm_actions = [module.observability.alarm_topic_arn]
 

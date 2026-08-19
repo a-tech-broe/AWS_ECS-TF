@@ -170,6 +170,37 @@ data "aws_iam_policy_document" "task_exec" {
       resources = [var.kms_key_arn]
     }
   }
+
+  # The cluster sends exec session transcripts to its own audit log group, and
+  # the SSM agent writes them under the *task* role. Without these the session
+  # does not merely go unlogged, it fails to start.
+  dynamic "statement" {
+    for_each = var.exec_log_group_arn != null ? [1] : []
+
+    content {
+      sid    = "WriteExecAuditLog"
+      effect = "Allow"
+      actions = [
+        "logs:CreateLogStream",
+        "logs:DescribeLogStreams",
+        "logs:PutLogEvents",
+      ]
+      resources = ["${var.exec_log_group_arn}:*"]
+    }
+  }
+
+  # DescribeLogGroups is not resource-scopable: the agent lists groups to
+  # confirm the configured one exists before opening a session.
+  dynamic "statement" {
+    for_each = var.exec_log_group_arn != null ? [1] : []
+
+    content {
+      sid       = "DiscoverExecAuditLogGroup"
+      effect    = "Allow"
+      actions   = ["logs:DescribeLogGroups"]
+      resources = ["*"]
+    }
+  }
 }
 
 resource "aws_iam_role_policy" "task_exec" {

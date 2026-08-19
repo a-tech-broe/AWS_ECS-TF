@@ -421,6 +421,12 @@ variable "kms_key_arn" {
   default     = null
 }
 
+variable "exec_log_group_arn" {
+  description = "ARN of the cluster's ECS Exec audit log group. Required when the cluster logs exec sessions: without write access to it the SSM agent cannot start a session at all."
+  type        = string
+  default     = null
+}
+
 variable "enable_alarms" {
   description = "Create CloudWatch alarms for this service."
   type        = bool
