@@ -35,6 +35,13 @@ create_github_oidc = true
 # the apply with EntityAlreadyExists.
 create_oidc_provider = false
 
+# The account already had a hand-made "ecs-platform-github-admin" role wired
+# into the repository variables. Rather than leave it dangling with
+# AdministratorAccess and a "repo:a-tech-broe/*" trust that matches any
+# repository in the account, this root adopts it as the CI apply role, so its
+# trust policy and permissions are whatever the code below says they are.
+apply_role_name = "ecs-platform-github-admin"
+
 github_subjects = [
   # Classic subject form.
   "repo:a-tech-broe/AWS_ECS-TF:ref:refs/heads/main",
@@ -45,11 +52,20 @@ github_subjects = [
   "repo:a-tech-broe/AWS_ECS-TF:environment:teardown",
   "repo:a-tech-broe/AWS_ECS-TF:environment:teardown-plan",
 
-  # Immutable subject form. This repository reports a sub_claim_prefix of
-  # "repo:a-tech-broe@279850212/AWS_ECS-TF@1328246552", so tokens carry owner and
-  # repository database IDs. Both forms are listed because which one a token
-  # presents is a GitHub-side setting, and a mismatch fails closed with
-  # "Not authorized to perform sts:AssumeRoleWithWebIdentity".
+  # Immutable subject form, and the one that actually matters here: CloudTrail
+  # shows the tokens this repository presents carry owner and repository
+  # database IDs, e.g.
+  #   repo:a-tech-broe@279850212/AWS_ECS-TF@1328246552:environment:shared
+  #
+  # Do not drop these entries on the strength of the repository OIDC API
+  # reporting "use_immutable_subject": false. That flag describes the
+  # repository-level customisation setting, not what GitHub actually issues,
+  # and it read false while every token was already immutable. A trust policy
+  # matching only the classic form fails closed, and the error names nothing
+  # useful: "Not authorized to perform sts:AssumeRoleWithWebIdentity".
+  #
+  # For the same reason a wildcard like "repo:a-tech-broe/*" does NOT cover
+  # these: the pattern expects "/" where an immutable subject has "@".
   "repo:a-tech-broe@279850212/AWS_ECS-TF@1328246552:ref:refs/heads/main",
   "repo:a-tech-broe@279850212/AWS_ECS-TF@1328246552:environment:shared",
   "repo:a-tech-broe@279850212/AWS_ECS-TF@1328246552:environment:dev",

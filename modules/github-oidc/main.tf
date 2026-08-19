@@ -28,6 +28,9 @@ locals {
 
   provider_arn = var.create_oidc_provider ? aws_iam_openid_connect_provider.github[0].arn : local.adopted_provider_arn
 
+  plan_role_name  = coalesce(var.plan_role_name, "${var.name}-gha-plan")
+  apply_role_name = coalesce(var.apply_role_name, "${var.name}-gha-apply")
+
   # Plan runs from pull requests; apply is restricted to whatever subjects the
   # caller listed, which should be branch- or environment-scoped.
   plan_subjects = distinct(concat(
@@ -151,7 +154,7 @@ data "aws_iam_policy_document" "state_access" {
 # --- Plan role ----------------------------------------------------------------
 
 resource "aws_iam_role" "plan" {
-  name                 = "${var.name}-gha-plan"
+  name                 = local.plan_role_name
   description          = "Read-only role assumed by GitHub Actions to run terraform plan"
   assume_role_policy   = data.aws_iam_policy_document.assume_plan.json
   max_session_duration = var.max_session_duration
@@ -177,7 +180,7 @@ resource "aws_iam_role_policy" "plan_state" {
 # --- Apply role ---------------------------------------------------------------
 
 resource "aws_iam_role" "apply" {
-  name                 = "${var.name}-gha-apply"
+  name                 = local.apply_role_name
   description          = "Role assumed by GitHub Actions to run terraform apply"
   assume_role_policy   = data.aws_iam_policy_document.assume_apply.json
   max_session_duration = var.max_session_duration

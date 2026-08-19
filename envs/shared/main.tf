@@ -49,6 +49,7 @@ module "github_oidc" {
 
   name                 = local.name
   create_oidc_provider = var.create_oidc_provider
+  apply_role_name      = var.apply_role_name
   github_subjects      = var.github_subjects
   state_bucket_arn     = var.state_bucket_arn
   state_lock_table_arn = var.state_lock_table_arn

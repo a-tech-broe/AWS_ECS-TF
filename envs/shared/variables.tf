@@ -58,6 +58,12 @@ variable "create_oidc_provider" {
   default     = true
 }
 
+variable "apply_role_name" {
+  description = "Name for the CI apply role. Null derives it from the project name. Set to adopt a role that already exists."
+  type        = string
+  default     = null
+}
+
 variable "github_subjects" {
   description = "OIDC subjects allowed to assume the apply role, e.g. ['repo:owner/AWS_ECS-TF:ref:refs/heads/main']."
   type        = list(string)
